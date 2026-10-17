@@ -1,0 +1,68 @@
+const groomingItems = [
+  {
+    id: "facewash",
+    src: "/G1.png",
+    alt: "Charcoal face wash",
+    name: "Charcoal Face Wash",
+    category: "Skin Care",
+    href: "/grooming/facewash",
+  },
+  {
+    id: "trimmer",
+    src: "/G2.png",
+    alt: "Men trimmer",
+    name: "Trimmer Pro",
+    category: "Styling",
+    href: "/grooming/styling",
+  },
+  {
+    id: "hairwax",
+    src: "/G3.png",
+    alt: "Men hair wax",
+    name: "Hair Wax",
+    category: "Hair Styling",
+    href: "/grooming/styling",
+  },
+  {
+    id: "cologne",
+    src: "/G4.png",
+    alt: "Men cologne",
+    name: "Premium Cologne",
+    category: "Fragrance",
+    href: "/grooming/cologne",
+  },
+  {
+    id: "hairserum",
+    src: "/G5.png",
+    alt: "Men hair serum",
+    name: "Hair Serum",
+    category: "Hair Care",
+    href: "/grooming/haircare",
+  },
+  {
+    id: "bodylotion",
+    src: "/G6.png",
+    alt: "Men Body Lotion",
+    name: "Body Lotion",
+    category: "Skin Care",
+    href: "/grooming/bodylotion",
+  },
+  {
+    id: "vitamincserum",
+    src: "/G7.png",
+    alt: "Women skincare",
+    name: "Vitamin C Serum",
+    category: "Skincare",
+    href: "/grooming/vitamincserum",
+  },
+  {
+    id: "nightcream",
+    src: "/G8.png",
+    alt: "Women face cream",
+    name: "Night Cream",
+    category: "Skincare",
+    href: "/grooming/nightcream",
+  },
+];
+
+export default groomingItems;
