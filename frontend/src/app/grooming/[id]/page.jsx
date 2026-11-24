@@ -1,4 +1,222 @@
-  <main className={GroomingPageStyles.mainContainer}>
+// app/grooming/page.jsx (or wherever your Grooming page is located)
+"use client";
+
+import React, { useMemo, useState, useEffect } from "react";
+import Image from "next/image";
+import { motion, AnimatePresence } from "framer-motion";
+import { Search, Plus, Minus, X } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { api } from "@/lib/api";
+import Navbar from "@/components/Navbar";
+import { useCart } from "@/CartContext"; // <-- adjust path if needed
+
+// Import styles from the centralized file
+import { GroomingPageStyles } from "@/app/styles/dummyStyles";
+
+/* -------------------- UTIL: flatten items from grouped structure -------------------- */
+function flattenTypes(data) {
+  return data.flatMap((type) => {
+    const men = (type.men || []).map((it) => ({
+      ...it,
+      gender: "men",
+      type: type.id,
+    }));
+    const women = (type.women || []).map((it) => ({
+      ...it,
+      gender: "women",
+      type: type.id,
+    }));
+    return [...men, ...women];
+  });
+}
+
+/* helper: normalize volume options into { label, price, value } */
+function getVolumeOptions(product) {
+  const opts = [];
+
+  // Check for the new variants structure
+  if (Array.isArray(product.variants)) {
+    for (const variant of product.variants) {
+      opts.push({
+        label: variant.size,
+        price: variant.price,
+        value: variant.value || variant.size, // Use numeric value for sorting if available
+      });
+    }
+    return opts;
+  }
+
+  // Fallback to old structure for backward compatibility
+  if (Array.isArray(product.volume)) {
+    for (const v of product.volume) {
+      if (typeof v === "string") opts.push({ label: v, price: product.price });
+      else if (v && typeof v === "object")
+        opts.push({
+          label: v.label ?? v.value ?? String(v),
+          price: v.price ?? product.price,
+        });
+      else opts.push({ label: String(v), price: product.price });
+    }
+    return opts;
+  }
+
+  if (typeof product.volume === "string") {
+    opts.push({ label: product.volume, price: product.price });
+    return opts;
+  }
+
+  return opts;
+}
+
+function makeKey(id, volumeLabel) {
+  return `${id}::${volumeLabel ?? ""}`;
+}
+
+function normalizeCategory(value = "") {
+  return String(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "")
+    .replace(/s$/, "");
+}
+
+function getGroomingBrand(product) {
+  if (product.brand) return product.brand;
+  const readableType = String(product.type || "")
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+  return readableType ? `DDD ${readableType}` : "DDD Grooming";
+}
+
+/* -------------------- PAGE COMPONENT -------------------- */
+export default function Page() {
+  const pathname = usePathname();
+  const openId = pathname?.split("/").filter(Boolean).pop() || null;
+
+  const [apiProducts, setApiProducts] = useState([]);
+  useEffect(() => {
+    if (!openId) {
+      setApiProducts([]);
+      return;
+    }
+    api(`/products/category/grooming/${encodeURIComponent(openId)}`)
+      .then((result) => setApiProducts(result.products || []))
+      .catch(() => setApiProducts([]));
+  }, [openId]);
+  const allItems = useMemo(
+    () =>
+      apiProducts.map((p) => ({
+        id: p._id,
+        name: p.name,
+        brand: p.brand,
+        gender: p.gender,
+        type: p.subCategory,
+        category: p.subCategory,
+        src: p.variants?.[0]?.images?.[0]?.url || "",
+        variants: (p.variants || []).flatMap((v) =>
+          (v.sizes || []).map((s) => ({ size: s.size, price: s.price })),
+        ),
+      })),
+    [apiProducts],
+  );
+  const indexMap = useMemo(() => {
+    const m = {};
+    allItems.forEach((it, idx) => {
+      if (it && it.id != null) m[it.id] = idx;
+    });
+    return m;
+  }, [allItems]);
+
+  const { addToCart, getItemQuantity, setItemQuantity, removeFromCart } =
+    useCart();
+
+  const [query, setQuery] = useState("");
+  const [genderFilter, setGenderFilter] = useState("men"); // default to men as requested
+  const [sort, setSort] = useState("featured"); // featured | price_asc | price_desc
+  const [selectedVolumes, setSelectedVolumes] = useState({});
+
+  // optimistic map to immediately show qty control after clicking "Add"
+  // keys are `${id}::${volumeLabel}`
+  const [optimisticAdded, setOptimisticAdded] = useState({});
+
+  // Initialize selected volumes with first variant of each product
+  React.useEffect(() => {
+    const initialSelected = {};
+    allItems.forEach((item) => {
+      const volOptions = getVolumeOptions(item);
+      if (volOptions.length > 0 && !selectedVolumes[item.id]) {
+        initialSelected[item.id] = {
+          value: volOptions[0].label,
+          price: volOptions[0].price,
+        };
+      }
+    });
+    if (Object.keys(initialSelected).length > 0) {
+      setSelectedVolumes((prev) => ({ ...prev, ...initialSelected }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allItems]);
+
+  const filteredByOpenId = useMemo(() => {
+    if (!openId) return allItems;
+
+    const productMatch = allItems.find((p) => String(p.id) === String(openId));
+    if (productMatch) return [productMatch];
+
+    const typeMatches = allItems.filter(
+      (p) => normalizeCategory(p.type) === normalizeCategory(openId),
+    );
+    if (typeMatches.length > 0) return typeMatches;
+
+    return [];
+  }, [allItems, openId]);
+
+  const items = useMemo(() => {
+    let filtered = filteredByOpenId.filter((p) => {
+      if (genderFilter !== "all" && p.gender !== genderFilter) return false;
+      const q = query.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        (p.name || "").toLowerCase().includes(q) ||
+        (p.brand || "").toLowerCase().includes(q) ||
+        (p.category || "").toLowerCase().includes(q) ||
+        (p.type || "").toLowerCase().includes(q)
+      );
+    });
+
+    let sorted = [...filtered];
+
+    if (sort === "price_asc") {
+      sorted.sort((a, b) => {
+        const aPrice = getVolumeOptions(a)[0]?.price || 0;
+        const bPrice = getVolumeOptions(b)[0]?.price || 0;
+        return aPrice - bPrice;
+      });
+    } else if (sort === "price_desc") {
+      sorted.sort((a, b) => {
+        const aPrice = getVolumeOptions(a)[0]?.price || 0;
+        const bPrice = getVolumeOptions(b)[0]?.price || 0;
+        return bPrice - aPrice;
+      });
+    } else {
+      sorted.sort((a, b) => {
+        const ia = indexMap[a.id] ?? 0;
+        const ib = indexMap[b.id] ?? 0;
+        return ia - ib;
+      });
+    }
+
+    return sorted;
+  }, [filteredByOpenId, query, genderFilter, sort, indexMap]);
+
+  const leftTitle = useMemo(() => {
+    if (!openId) return "Grooming";
+    const prod = allItems.find((p) => String(p.id) === String(openId));
+    if (prod) return prod.name || `${openId}`;
+    return `${openId}`;
+  }, [openId, allItems]);
+
+  return (
+    <main className={GroomingPageStyles.mainContainer}>
       <Navbar />
       <div className={GroomingPageStyles.contentContainer}>
         {/* Header */}
@@ -334,3 +552,5 @@
         </section>
       </div>
     </main>
+  );
+}

@@ -1,4 +1,219 @@
-  <div className={addGroomingPageStyles.mainContainer}>
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import Navbar from "@/components/Navbar";
+import AdminPageBackground from "@/components/AdminPageBackground";
+import {
+  Upload,
+  Plus,
+  Trash2,
+  Tag,
+  User,
+  Droplets,
+  Package,
+  Camera,
+  Scale,
+  IndianRupee,
+  ChevronDown,
+  BadgeIndianRupee,
+  Pencil,
+  EyeClosed,
+  X,
+} from "lucide-react";
+import toast, { Toaster } from "react-hot-toast";
+import {
+  addGroomingPageStyles,
+  AdminRemainingStyles,
+} from "@/app/styles/dummyStyles";
+import { api } from "@/lib/api";
+import { createGroomingProduct, revokeObjectUrl } from "@/lib/product-form";
+
+const AddGroomingPage = () => {
+  const [product, setProduct] = useState(createGroomingProduct);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const fileInputRef = useRef(null);
+  const prevImageUrlRef = useRef(null);
+
+  const groomingTypes = {
+    men: [
+      "Face Wash",
+      "Trimmer Pro",
+      "Hair Wax",
+      "Premium Cologne",
+      "Hair Serum",
+      "Body Lotion",
+      "Vitamin C Serum",
+      "Night Cream",
+    ],
+    women: [
+      "Face Wash",
+      "Trimmer Pro",
+      "Hair Wax",
+      "Premium Cologne",
+      "Hair Serum",
+      "Body Lotion",
+      "Vitamin C Serum",
+      "Night Cream",
+    ],
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setProduct((prev) => ({
+      ...prev,
+      [name]: value,
+      ...(name === "gender" && { category: "" }),
+    }));
+  };
+
+  const handleImageChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) {
+      if (!file.type.startsWith("image/")) {
+        toast.error("Please select an image file");
+        return;
+      }
+
+      if (prevImageUrlRef.current) {
+        revokeObjectUrl(prevImageUrlRef.current);
+        prevImageUrlRef.current = null;
+      }
+
+      const url = URL.createObjectURL(file);
+      prevImageUrlRef.current = url;
+
+      setProduct((prev) => ({
+        ...prev,
+        image: file,
+        imagePreview: url,
+      }));
+    }
+  };
+
+  const handleVolumeChange = (index, field, value) => {
+    const newVolumes = [...product.volumes];
+    newVolumes[index][field] = value;
+    setProduct((prev) => ({ ...prev, volumes: newVolumes }));
+  };
+
+  const addVolume = () =>
+    setProduct((prev) => ({
+      ...prev,
+      volumes: [...prev.volumes, { volume: "", price: "" }],
+    }));
+
+  const removeVolume = (index) => {
+    if (product.volumes.length > 1) {
+      setProduct((prev) => ({
+        ...prev,
+        volumes: prev.volumes.filter((_, i) => i !== index),
+      }));
+    }
+  };
+
+  const validateForm = () => {
+    if (!product.name.trim()) return toast.error("✗ Product name is required");
+    if (!product.brand.trim()) return toast.error("✗ Brand name is required");
+    if (!product.gender) return toast.error("✗ Please select gender");
+    if (!product.category) return toast.error("✗ Please select grooming type");
+    if (!product.image) return toast.error("✗ Product image is required");
+    for (const volume of product.volumes) {
+      if (!volume.volume.trim() || !String(volume.price).trim())
+        return toast.error("✗ Fill all volume and price fields");
+      if (isNaN(parseFloat(volume.price)))
+        return toast.error("✗ Price must be a valid number");
+    }
+    return true;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!validateForm()) return;
+    setIsSubmitting(true);
+    try {
+      const upload = new FormData();
+      upload.append("image", product.image);
+      const image = await api("/upload", { method: "POST", body: upload });
+      await api("/products/add", {
+        method: "POST",
+        body: JSON.stringify({
+          name: product.name,
+          brand: product.brand,
+          category: "grooming",
+          subCategory: product.category,
+          gender: product.gender,
+          variants: [
+            {
+              color: "",
+              images: [{ url: image.imageUrl, publicId: image.publicId }],
+              sizes: product.volumes.map((v) => ({
+                size: v.volume,
+                price: Number(v.price),
+              })),
+            },
+          ],
+        }),
+      });
+    } catch (err) {
+      toast.error(err.message);
+      return;
+    } finally {
+      setIsSubmitting(false);
+    }
+
+    toast.success(" Product added successfully!", {
+      duration: 3000,
+      style: addGroomingPageStyles.toastStyle,
+      icon: "✅",
+    });
+
+    if (prevImageUrlRef.current) {
+      revokeObjectUrl(prevImageUrlRef.current);
+      prevImageUrlRef.current = null;
+    }
+
+    setProduct(createGroomingProduct());
+
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  useEffect(() => {
+    return () => {
+      if (prevImageUrlRef.current) {
+        revokeObjectUrl(prevImageUrlRef.current);
+        prevImageUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  const openFileDialog = () => {
+    if (fileInputRef.current) fileInputRef.current.click();
+  };
+
+  const removeImage = (event) => {
+    event.stopPropagation();
+    if (prevImageUrlRef.current) {
+      revokeObjectUrl(prevImageUrlRef.current);
+      prevImageUrlRef.current = null;
+    }
+    setProduct((prev) => ({ ...prev, image: null, imagePreview: null }));
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  return (
+    <>
+      <Navbar />
+      <AdminPageBackground />
+      <Toaster
+        position="top-right"
+        containerStyle={{ top: 128 }}
+        toastOptions={{
+          style: addGroomingPageStyles.toasterOptions,
+        }}
+      />
+
+      <div className={addGroomingPageStyles.mainContainer}>
         <div className={addGroomingPageStyles.contentContainer}>
           {/* Header */}
           <div className={addGroomingPageStyles.headerContainer}>
@@ -56,9 +271,13 @@
                             type="button"
                             onClick={removeImage}
                             aria-label="Remove product image"
-                            className={AdminRemainingStyles.addGrooming.removeImage}
+                            className={
+                              AdminRemainingStyles.addGrooming.removeImage
+                            }
                           >
-                            <X className={AdminRemainingStyles.addGrooming.icon4} />
+                            <X
+                              className={AdminRemainingStyles.addGrooming.icon4}
+                            />
                           </button>
                         </>
                       ) : (
@@ -152,7 +371,9 @@
                       <div
                         className={addGroomingPageStyles.productNameInputIcon}
                       >
-                        <Tag className={AdminRemainingStyles.addGrooming.icon5} />
+                        <Tag
+                          className={AdminRemainingStyles.addGrooming.icon5}
+                        />
                       </div>
                     </div>
                   </div>
@@ -192,7 +413,9 @@
                       <div
                         className={addGroomingPageStyles.productNameInputIcon}
                       >
-                        <Tag className={AdminRemainingStyles.addGrooming.icon5} />
+                        <Tag
+                          className={AdminRemainingStyles.addGrooming.icon5}
+                        />
                       </div>
                     </div>
                   </div>
@@ -247,7 +470,9 @@
                           </option>
                         </select>
                         <div className={addGroomingPageStyles.genderSelectIcon}>
-                          <EyeClosed className={AdminRemainingStyles.addGrooming.icon5} />
+                          <EyeClosed
+                            className={AdminRemainingStyles.addGrooming.icon5}
+                          />
                         </div>
                       </div>
                     </div>
@@ -305,7 +530,9 @@
                         <div
                           className={addGroomingPageStyles.categorySelectIcon}
                         >
-                          <EyeClosed className={AdminRemainingStyles.addGrooming.icon5} />
+                          <EyeClosed
+                            className={AdminRemainingStyles.addGrooming.icon5}
+                          />
                         </div>
                       </div>
                     </div>
@@ -506,3 +733,8 @@
           </form>
         </div>
       </div>
+    </>
+  );
+};
+
+export default AddGroomingPage;

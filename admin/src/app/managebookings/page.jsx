@@ -1,5 +1,223 @@
- <div className={dashboardStyles.pageContainer}>
-        {toast && <div className={dashboardStyles.toastContainer}>        <div className={dashboardStyles.toast(toast.type)} role="status" aria-live="polite"><span className={dashboardStyles.toastIconWrap(toast.type)} aria-hidden="true">{toast.type === "delete" ? <Trash2 className={AdminRemainingStyles.dashboard.icon5} /> : <CheckCircle className={AdminRemainingStyles.dashboard.icon5} />}</span><div className={AdminRemainingStyles.orders.inlineMessage}>{toast.message}</div><button onClick={() => setToast(null)} className={dashboardStyles.toastCloseButton} aria-label="Close notification">×</button></div></div>}
+"use client";
+
+import { useEffect, useState } from "react";
+import Navbar from "@/components/Navbar";
+import AdminPageBackground from "@/components/AdminPageBackground";
+import {
+  CheckCircle,
+  CreditCard,
+  Eye,
+  Package as PackageIcon,
+  Phone,
+  MapPin,
+  Search,
+  Trash2,
+  TruckElectric,
+  User,
+  Wallet,
+  X,
+  XCircle,
+} from "lucide-react";
+import {
+  dashboardStyles,
+  AdminRemainingStyles,
+} from "@/app/styles/dummyStyles";
+import { api } from "@/lib/api";
+import {
+  getAvailableStatusOptions,
+  getOrderStatusLabel,
+  getOrderTotal,
+  matchesOrderStatusFilter,
+  toDisplayOrder,
+} from "@/lib/orders";
+import { statusFlow } from "@/dummyData";
+
+export default function ManageBookings() {
+  const [orders, setOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [ordersError, setOrdersError] = useState("");
+  const loadOrders = async () => {
+    try {
+      const result = await api("/orders");
+      setOrders(result.orders.map(toDisplayOrder));
+      setOrdersError("");
+    } catch (error) {
+      console.error(error);
+      setOrdersError(
+        "Orders could not load. Check the connection and try again.",
+      );
+    } finally {
+      setOrdersLoading(false);
+    }
+  };
+  useEffect(() => {
+    const initialLoad = window.setTimeout(loadOrders, 0);
+    const refresh = window.setInterval(loadOrders, 15000);
+    return () => {
+      window.clearTimeout(initialLoad);
+      window.clearInterval(refresh);
+    };
+  }, []);
+  const [selectedStatus, setSelectedStatus] = useState("All");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  const formatPrice = (price) =>
+    new Intl.NumberFormat("en-IN", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(price);
+
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredOrders = orders.filter((order) => {
+    const matchesStatus = matchesOrderStatusFilter(
+      order.orderStatus,
+      selectedStatus,
+    );
+    const matchesSearch =
+      normalizedSearch === "" ||
+      String(order.displayId).toLowerCase().includes(normalizedSearch) ||
+      order.customer.name.toLowerCase().includes(normalizedSearch) ||
+      order.customer.mobile.includes(normalizedSearch);
+
+    return matchesStatus && matchesSearch;
+  });
+
+  const displayedOrders = [...filteredOrders].sort((a, b) => {
+    const da = new Date(a.date || 0).getTime();
+    const db = new Date(b.date || 0).getTime();
+    return db - da;
+  });
+
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case "Delivered":
+      case "Order Confirmed":
+      case "Confirmed":
+        return <CheckCircle className={dashboardStyles.statusIcon} />;
+      case "Cancelled":
+        return <XCircle className={dashboardStyles.statusIcon} />;
+      case "Shipped / Dispatched":
+      case "Out for Delivery":
+      case "Shipped":
+        return <TruckElectric className={dashboardStyles.statusIcon} />;
+      case "Order Placed":
+      case "Processing / Being Prepared":
+      case "Ready for Pickup":
+      default:
+        return <PackageIcon className={dashboardStyles.statusIcon} />;
+    }
+  };
+
+  const handleStatusChange = async (orderId, newStatus, confirmed = false) => {
+    if (newStatus === "Cancelled" && !confirmed) {
+      setCancelTarget(
+        orders.find((order) => order.id === orderId) || { id: orderId },
+      );
+      return;
+    }
+    try {
+      await api(`/orders/status/${orderId}`, {
+        method: "PUT",
+        body: JSON.stringify({ orderStatus: newStatus }),
+      });
+    } catch (error) {
+      console.error(error);
+      return;
+    }
+    setOrders((prev) =>
+      prev.map((order) =>
+        order.id === orderId
+          ? {
+              ...order,
+              orderStatus: newStatus,
+              paymentState:
+                newStatus === "Delivered" && order.paymentMethod === "COD"
+                  ? "Paid"
+                  : order.paymentState,
+            }
+          : order,
+      ),
+    );
+    setToast({
+      message: `Order status updated to ${getOrderStatusLabel(newStatus)}.`,
+      type: newStatus === "Cancelled" ? "delete" : "success",
+    });
+    window.setTimeout(() => setToast(null), 3000);
+  };
+
+  const removeOrder = (orderId) => {
+    setDeleteTarget(orders.find((order) => order.id === orderId) || null);
+  };
+
+  const confirmDeleteOrder = async () => {
+    if (!deleteTarget) return;
+    try {
+      await api(`/orders/${deleteTarget.id}`, { method: "DELETE" });
+    } catch (error) {
+      console.error(error);
+      return;
+    }
+    setOrders((prev) => prev.filter((order) => order.id !== deleteTarget.id));
+    setSelectedOrder(null);
+    setDeleteTarget(null);
+    setToast({ message: "Order deleted successfully", type: "delete" });
+    window.setTimeout(() => setToast(null), 3000);
+  };
+
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === "Escape") {
+        setSelectedOrder(null);
+        setDeleteTarget(null);
+      }
+    };
+
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, []);
+
+  return (
+    <>
+      <Navbar />
+      <AdminPageBackground />
+      <div className={dashboardStyles.pageContainer}>
+        {toast && (
+          <div className={dashboardStyles.toastContainer}>
+            {" "}
+            <div
+              className={dashboardStyles.toast(toast.type)}
+              role="status"
+              aria-live="polite"
+            >
+              <span
+                className={dashboardStyles.toastIconWrap(toast.type)}
+                aria-hidden="true"
+              >
+                {toast.type === "delete" ? (
+                  <Trash2 className={AdminRemainingStyles.dashboard.icon5} />
+                ) : (
+                  <CheckCircle
+                    className={AdminRemainingStyles.dashboard.icon5}
+                  />
+                )}
+              </span>
+              <div className={AdminRemainingStyles.orders.inlineMessage}>
+                {toast.message}
+              </div>
+              <button
+                onClick={() => setToast(null)}
+                className={dashboardStyles.toastCloseButton}
+                aria-label="Close notification"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        )}
         {deleteTarget && (
           <div className={dashboardStyles.deleteConfirmContainer}>
             <div className={dashboardStyles.deleteConfirmCard}>
@@ -11,8 +229,8 @@
                   Delete order {deleteTarget.displayId || deleteTarget.id}?
                 </div>
                 <div className={dashboardStyles.deleteConfirmText}>
-                  This removes {deleteTarget.customer.name}&apos;s order from the
-                  list.
+                  This removes {deleteTarget.customer.name}&apos;s order from
+                  the list.
                 </div>
                 <div className={dashboardStyles.deleteConfirmActions}>
                   <button
@@ -45,13 +263,34 @@
         {cancelTarget && (
           <div className={dashboardStyles.deleteConfirmContainer}>
             <div className={dashboardStyles.deleteConfirmCard}>
-              <span className={dashboardStyles.deleteConfirmIconWrap}><XCircle className={AdminRemainingStyles.dashboard.icon5} /></span>
+              <span className={dashboardStyles.deleteConfirmIconWrap}>
+                <XCircle className={AdminRemainingStyles.dashboard.icon5} />
+              </span>
               <div className={AdminRemainingStyles.dashboard.flexibleContent}>
-                <div className={dashboardStyles.deleteConfirmTitle}>Cancel order {cancelTarget.displayId || cancelTarget.id}?</div>
-                <div className={dashboardStyles.deleteConfirmText}>This action changes the order status to cancelled.</div>
+                <div className={dashboardStyles.deleteConfirmTitle}>
+                  Cancel order {cancelTarget.displayId || cancelTarget.id}?
+                </div>
+                <div className={dashboardStyles.deleteConfirmText}>
+                  This action changes the order status to cancelled.
+                </div>
                 <div className={dashboardStyles.deleteConfirmActions}>
-                  <button type="button" onClick={() => setCancelTarget(null)} className={dashboardStyles.deleteCancelButton}>Keep order</button>
-                  <button type="button" onClick={() => { handleStatusChange(cancelTarget.id, "Cancelled", true); setCancelTarget(null); }} className={dashboardStyles.deleteConfirmButton}>Confirm cancel</button>
+                  <button
+                    type="button"
+                    onClick={() => setCancelTarget(null)}
+                    className={dashboardStyles.deleteCancelButton}
+                  >
+                    Keep order
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleStatusChange(cancelTarget.id, "Cancelled", true);
+                      setCancelTarget(null);
+                    }}
+                    className={dashboardStyles.deleteConfirmButton}
+                  >
+                    Confirm cancel
+                  </button>
                 </div>
               </div>
             </div>
@@ -181,7 +420,11 @@
                           <p className={dashboardStyles.modalInfoValue}>
                             {selectedOrder.customer.address}
                           </p>
-                          <p className={AdminRemainingStyles.dashboard.mutedSubtext}>
+                          <p
+                            className={
+                              AdminRemainingStyles.dashboard.mutedSubtext
+                            }
+                          >
                             Pincode: {selectedOrder.customer.pincode}
                           </p>
                         </div>
@@ -194,12 +437,93 @@
                       Product Details
                     </h3>
                     <div className={AdminRemainingStyles.orders.productGrid}>
-                    {(selectedOrder.items || []).map((item, index) => (
-                      <div key={`${item.name}-${index}`} className={AdminRemainingStyles.orders.itemDetails}>
-                        {item.image && <div className={dashboardStyles.productImageContainer}><img src={item.image} alt={item.name} className={dashboardStyles.productImage} /></div>}
-                        <div className={AdminRemainingStyles.orders.productContent}><p className={AdminRemainingStyles.orders.productName}>{item.name}</p>{item.brand && <p className={AdminRemainingStyles.orders.productBrand}>Brand: {item.brand}</p>}<div className={AdminRemainingStyles.orders.productMeta}>{item.size && <span><span className={AdminRemainingStyles.orders.mutedLabel}>Size:</span> {item.size}</span>}{item.color && <span><span className={AdminRemainingStyles.orders.mutedLabel}>Colour:</span> {item.color}</span>}<span><span className={AdminRemainingStyles.orders.mutedLabel}>Qty:</span> {item.quantity}</span><span className={AdminRemainingStyles.orders.successValue}>Price: Rs {formatPrice(item.price)}</span></div></div>
-                      </div>
-                    ))}
+                      {(selectedOrder.items || []).map((item, index) => (
+                        <div
+                          key={`${item.name}-${index}`}
+                          className={AdminRemainingStyles.orders.itemDetails}
+                        >
+                          {item.image && (
+                            <div
+                              className={dashboardStyles.productImageContainer}
+                            >
+                              <img
+                                src={item.image}
+                                alt={item.name}
+                                className={dashboardStyles.productImage}
+                              />
+                            </div>
+                          )}
+                          <div
+                            className={
+                              AdminRemainingStyles.orders.productContent
+                            }
+                          >
+                            <p
+                              className={
+                                AdminRemainingStyles.orders.productName
+                              }
+                            >
+                              {item.name}
+                            </p>
+                            {item.brand && (
+                              <p
+                                className={
+                                  AdminRemainingStyles.orders.productBrand
+                                }
+                              >
+                                Brand: {item.brand}
+                              </p>
+                            )}
+                            <div
+                              className={
+                                AdminRemainingStyles.orders.productMeta
+                              }
+                            >
+                              {item.size && (
+                                <span>
+                                  <span
+                                    className={
+                                      AdminRemainingStyles.orders.mutedLabel
+                                    }
+                                  >
+                                    Size:
+                                  </span>{" "}
+                                  {item.size}
+                                </span>
+                              )}
+                              {item.color && (
+                                <span>
+                                  <span
+                                    className={
+                                      AdminRemainingStyles.orders.mutedLabel
+                                    }
+                                  >
+                                    Colour:
+                                  </span>{" "}
+                                  {item.color}
+                                </span>
+                              )}
+                              <span>
+                                <span
+                                  className={
+                                    AdminRemainingStyles.orders.mutedLabel
+                                  }
+                                >
+                                  Qty:
+                                </span>{" "}
+                                {item.quantity}
+                              </span>
+                              <span
+                                className={
+                                  AdminRemainingStyles.orders.successValue
+                                }
+                              >
+                                Price: Rs {formatPrice(item.price)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -264,26 +588,51 @@
           </div>
 
           {ordersLoading && (
-            <div className={dashboardStyles.orderState} role="status" aria-live="polite">
+            <div
+              className={dashboardStyles.orderState}
+              role="status"
+              aria-live="polite"
+            >
               <div className={dashboardStyles.orderSkeleton} />
-              <p className={AdminRemainingStyles.orders.loadingText}>Loading orders…</p>
+              <p className={AdminRemainingStyles.orders.loadingText}>
+                Loading orders…
+              </p>
             </div>
           )}
           {!ordersLoading && ordersError && (
             <div className={dashboardStyles.orderState} role="alert">
-              <h3 className={dashboardStyles.orderStateTitle}>Orders did not load</h3>
+              <h3 className={dashboardStyles.orderStateTitle}>
+                Orders did not load
+              </h3>
               <p className={dashboardStyles.orderStateText}>{ordersError}</p>
-              <button type="button" onClick={loadOrders} className={dashboardStyles.orderRetryButton}>Try again</button>
+              <button
+                type="button"
+                onClick={loadOrders}
+                className={dashboardStyles.orderRetryButton}
+              >
+                Try again
+              </button>
             </div>
           )}
           {!ordersLoading && !ordersError && displayedOrders.length === 0 && (
-            <div className={dashboardStyles.orderState} role="status" aria-live="polite">
-              <h3 className={dashboardStyles.orderStateTitle}>No orders found</h3>
-              <p className={dashboardStyles.orderStateText}>New orders will appear here. Adjust the search or status filter to see other results.</p>
+            <div
+              className={dashboardStyles.orderState}
+              role="status"
+              aria-live="polite"
+            >
+              <h3 className={dashboardStyles.orderStateTitle}>
+                No orders found
+              </h3>
+              <p className={dashboardStyles.orderStateText}>
+                New orders will appear here. Adjust the search or status filter
+                to see other results.
+              </p>
             </div>
           )}
 
-          <div className={`${dashboardStyles.mobileOrdersContainer} ${ordersLoading || ordersError || displayedOrders.length === 0 ? AdminRemainingStyles.shared.hidden : ""}`}>
+          <div
+            className={`${dashboardStyles.mobileOrdersContainer} ${ordersLoading || ordersError || displayedOrders.length === 0 ? AdminRemainingStyles.shared.hidden : ""}`}
+          >
             {displayedOrders.map((order) => {
               const availableStatusOptions = getAvailableStatusOptions(
                 order.orderStatus,
@@ -302,7 +651,9 @@
                         className={dashboardStyles.mobileOrderImage}
                       />
                     </div>
-                    <div className={AdminRemainingStyles.orders.flexibleContent}>
+                    <div
+                      className={AdminRemainingStyles.orders.flexibleContent}
+                    >
                       <div className={dashboardStyles.mobileOrderGrid}>
                         <div className={AdminRemainingStyles.orders.minWidth}>
                           <h4 className={dashboardStyles.mobileProductName}>
@@ -401,7 +752,9 @@
             })}
           </div>
 
-          <div className={`${dashboardStyles.desktopTable} ${ordersLoading || ordersError || displayedOrders.length === 0 ? AdminRemainingStyles.shared.hidden : ""}`}>
+          <div
+            className={`${dashboardStyles.desktopTable} ${ordersLoading || ordersError || displayedOrders.length === 0 ? AdminRemainingStyles.shared.hidden : ""}`}
+          >
             <table className={dashboardStyles.table}>
               <thead>
                 <tr className={dashboardStyles.tableHeader}>
@@ -516,3 +869,6 @@
           </div>
         </div>
       </div>
+    </>
+  );
+}

@@ -1,4 +1,146 @@
- <main className={contactPageStyles.page}>
+"use client";
+
+import React, { useState, useEffect } from "react";
+import {
+  Mail,
+  Phone,
+  ShoppingBag,
+  Instagram,
+  MapPin,
+  Send,
+  CheckCircle,
+  AlertCircle,
+  MessageCircle,
+  ChevronRight,
+} from "lucide-react";
+import Navbar from "@/components/Navbar";
+import { contactPageStyles } from "@/app/styles/dummyStyles";
+
+export default function ContactPage() {
+  const initialForm = {
+    name: "",
+    email: "",
+    phone: "",
+    orderId: "",
+    product: "",
+    size: "",
+    color: "",
+    message: "",
+  };
+
+  const [form, setForm] = useState(initialForm);
+  const [phoneError, setPhoneError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [currentTime, setCurrentTime] = useState("");
+
+  const whatsappNumber = "918299431275";
+  const phonePrefixes = ["6", "7", "8", "9"];
+
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      const hh = now.getHours();
+      const mm = now.getMinutes();
+      const ampm = hh >= 12 ? "PM" : "AM";
+      const hours = hh % 12 || 12;
+      const mins = mm.toString().padStart(2, "0");
+      setCurrentTime(`${hours}:${mins} ${ampm}`);
+    };
+    updateTime();
+    const id = setInterval(updateTime, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const validatePhone = (phone) => {
+    const cleaned = (phone || "").replace(/\D/g, "");
+    if (cleaned.length > 10) return "Phone number must be 10 digits";
+    if (cleaned.length < 10 && cleaned.length > 0)
+      return "Phone number must be 10 digits";
+    if (cleaned.length === 10 && !/^[6-9]\d{9}$/.test(cleaned))
+      return "Please enter a valid Indian mobile number";
+    return "";
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+
+    if (name === "phone") {
+      const digitsOnly = value.replace(/\D/g, "");
+      const truncated = digitsOnly.slice(0, 10);
+      setForm((s) => ({ ...s, phone: truncated }));
+      setPhoneError(validatePhone(truncated));
+      return;
+    }
+
+    setForm((s) => ({ ...s, [name]: value }));
+  };
+
+  const handleBlur = (e) => {
+    if (e.target.name === "phone") {
+      setPhoneError(validatePhone(e.target.value));
+    }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+
+    const phoneValidation = validatePhone(form.phone);
+    if (phoneValidation) {
+      setPhoneError(phoneValidation);
+      return;
+    }
+
+    setIsLoading(true);
+
+    const formattedPhone = form.phone
+      ? `+91 ${form.phone.slice(0, 5)} ${form.phone.slice(5)}`
+      : "-";
+
+    const lines = [
+      " *SWAP Contact Form*",
+      "────────────────────────",
+      "",
+      "👤 *Personal Details*",
+      `• Name   : ${form.name || "-"}`,
+      `• Email  : ${form.email || "-"}`,
+      `• Phone  : ${form.phone ? formattedPhone : "-"}`,
+      "",
+      " *Order Details*",
+      `• Order ID : ${form.orderId || "-"}`,
+      `• Product  : ${form.product || "-"}`,
+      `• Size     : ${form.size || "-"}`,
+      `• Color    : ${form.color || "-"}`,
+      "",
+      " *Customer Message*",
+      `${form.message || "No message provided"}`,
+      "",
+      "────────────────────────",
+      "_Sent via SWAP Website_",
+      ` ${new Date().toLocaleDateString("en-IN", {
+        weekday: "short",
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })}`,
+      ` ${currentTime}`,
+    ].join("\n");
+
+    const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(lines)}`;
+
+    setTimeout(() => {
+      window.open(url, "_blank");
+      setIsLoading(false);
+      setIsSubmitted(true);
+      setForm(initialForm);
+      setPhoneError("");
+
+      setTimeout(() => setIsSubmitted(false), 4000);
+    }, 800);
+  };
+
+  return (
+    <main className={contactPageStyles.page}>
       <Navbar />
 
       {isSubmitted && (
@@ -430,3 +572,5 @@
         </div>
       </div>
     </main>
+  );
+}
